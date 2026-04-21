@@ -1,0 +1,7 @@
+requests
+beautifulsoup4
+pytest
+pytest-cov
+ruff
+mypy
+responses
