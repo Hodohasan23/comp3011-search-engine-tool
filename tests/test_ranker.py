@@ -1,0 +1,31 @@
+from src.inverted_index import InvertedIndex
+from src.ranker import BM25Ranker
+
+
+def test_average_document_length():
+    index = InvertedIndex()
+    index.add_document("page1", "<p>good friends</p>")
+    index.add_document("page2", "<p>good books again</p>")
+
+    ranker = BM25Ranker(index)
+
+    assert ranker.average_document_length() == 2.5
+
+
+def test_score_returns_positive_for_matching_document():
+    index = InvertedIndex()
+    index.add_document("page1", "<p>rare rare word</p>")
+    index.add_document("page2", "<p>common text here</p>")
+
+    ranker = BM25Ranker(index)
+
+    assert ranker.score(["rare"], "page1") > 0
+
+
+def test_score_returns_zero_for_non_matching_document():
+    index = InvertedIndex()
+    index.add_document("page1", "<p>good friends</p>")
+
+    ranker = BM25Ranker(index)
+
+    assert ranker.score(["missing"], "page1") == 0.0
