@@ -1,14 +1,19 @@
-from src.inverted_index import InvertedIndex
-from src.ranker import BM25Ranker
 from src.html_parser import tokenize
+from src.inverted_index import InvertedIndex
+from src.query_processor import QueryProcessor
+from src.ranker import BM25Ranker
 
 
 class SearchEngine:
     def __init__(self, index: InvertedIndex) -> None:
         self.index = index
         self.ranker = BM25Ranker(index)
+        self.query_processor = QueryProcessor()
 
     def find(self, query: str) -> list[tuple[str, float]]:
+        if self.query_processor.is_phrase_query(query):
+            return self.find_phrase(query)
+
         query_terms = tokenize(query)
 
         if not query_terms:
@@ -30,6 +35,53 @@ class SearchEngine:
         results = [
             (url, self.ranker.score(query_terms, url))
             for url in matching_urls
+        ]
+
+        return sorted(results, key=lambda item: (-item[1], item[0]))
+
+    def find_phrase(self, query: str) -> list[tuple[str, float]]:
+        phrase_terms = self.query_processor.extract_phrase_terms(query)
+
+        if not phrase_terms:
+            return []
+
+        candidate_urls: set[str] | None = None
+
+        for term in phrase_terms:
+            urls = set(self.index.postings_for(term).keys())
+
+            if candidate_urls is None:
+                candidate_urls = urls
+            else:
+                candidate_urls = candidate_urls.intersection(urls)
+
+        if not candidate_urls:
+            return []
+
+        matched_urls = []
+
+        for url in candidate_urls:
+            first_term_positions = self.index.postings_for(
+                phrase_terms[0]
+            )[url].positions
+
+            for start_position in first_term_positions:
+                phrase_matches = True
+
+                for offset, term in enumerate(phrase_terms[1:], start=1):
+                    positions = self.index.postings_for(term)[url].positions
+
+                    if start_position + offset not in positions:
+                        phrase_matches = False
+                        break
+
+                if phrase_matches:
+                    matched_urls.append(url)
+                    break
+
+        results = [
+            (url, self.ranker.score(phrase_terms, url))
+            for url in matched_urls
         ]
 
         return sorted(results, key=lambda item: (-item[1], item[0]))
