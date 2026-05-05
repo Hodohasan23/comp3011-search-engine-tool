@@ -1,0 +1,9 @@
+[tool.ruff]
+line-length = 88
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

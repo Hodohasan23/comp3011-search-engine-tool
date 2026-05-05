@@ -4,6 +4,7 @@ import shlex
 from src.crawler import Crawler
 from src.inverted_index import InvertedIndex
 from src.search_engine import SearchEngine
+from src.metrics import Timer, index_summary
 
 
 DEFAULT_START_URL = "https://quotes.toscrape.com/"
@@ -24,6 +25,9 @@ class SearchCLI:
         self.engine: SearchEngine | None = None
 
     def build(self) -> str:
+        timer = Timer()
+        timer.start()
+
         crawler = Crawler(
             self.start_url,
             politeness_window=self.politeness_window,
@@ -37,10 +41,21 @@ class SearchCLI:
 
         index.save(self.index_path)
 
+        timer.stop()
+
         self.index = index
         self.engine = SearchEngine(index)
 
-        return f"Built index for {len(pages)} pages and saved to {self.index_path}"
+        summary = index_summary(index, self.index_path)
+
+        return (
+            f"Built index for {summary['documents']} pages "
+            f"with {summary['vocabulary_size']} unique terms "
+            f"and {summary['total_tokens']} tokens.\n"
+            f"Saved to {self.index_path} "
+            f"({summary.get('index_size_bytes', 0)} bytes).\n"
+            f"Build completed in {timer.elapsed():.2f} seconds."
+        )
 
     def load(self) -> str:
         self.index = InvertedIndex.load(self.index_path)
