@@ -95,3 +95,52 @@ def test_quit_raises_system_exit():
         assert True
     else:
         assert False
+
+from pathlib import Path
+
+from src.cli import SearchCLI
+
+
+def test_build_creates_index_file(tmp_path):
+    cli = SearchCLI(
+        index_path=str(tmp_path / "index.json"),
+        politeness_window=0,
+    )
+
+    class FakeCrawler:
+        def crawl(self):
+            return {
+                "page1": "<p>good friends</p>",
+                "page2": "<p>good books</p>",
+            }
+
+    from src import cli as cli_module
+
+    original_crawler = cli_module.Crawler
+    cli_module.Crawler = lambda *args, **kwargs: FakeCrawler()
+
+    try:
+        output = cli.build()
+
+        assert "Built index" in output
+        assert Path(tmp_path / "index.json").exists()
+
+    finally:
+        cli_module.Crawler = original_crawler
+
+
+def test_load_reads_existing_index(tmp_path):
+    from src.inverted_index import InvertedIndex
+
+    index_path = tmp_path / "index.json"
+
+    index = InvertedIndex()
+    index.add_document("page1", "<p>good friends</p>")
+    index.save(str(index_path))
+
+    cli = SearchCLI(index_path=str(index_path))
+
+    output = cli.load()
+
+    assert "Loaded index" in output
+    assert cli.engine is not None
