@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from src.cli import SearchCLI
 from src.inverted_index import InvertedIndex
 from src.search_engine import SearchEngine
@@ -95,11 +97,6 @@ def test_quit_raises_system_exit():
         assert True
     else:
         assert False
-
-from pathlib import Path
-
-from src.cli import SearchCLI
-
 
 def test_build_creates_index_file(tmp_path):
     cli = SearchCLI(
