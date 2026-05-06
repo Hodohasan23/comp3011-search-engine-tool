@@ -81,6 +81,21 @@ class SearchCLI:
         results = self.engine.find(query)
 
         if not results:
+            suggestions = self.engine.suggest_terms(query)
+
+            if suggestions:
+                suggestion_lines = [
+                    f"No pages match '{query}'.",
+                    "Did you mean:",
+                ]
+
+                for original, suggestion in suggestions.items():
+                    suggestion_lines.append(
+                        f"  {suggestion} instead of {original}"
+                    )
+
+                return "\n".join(suggestion_lines)
+
             return f"No pages match '{query}'."
 
         lines = [f"{len(results)} result(s) for '{query}':"]

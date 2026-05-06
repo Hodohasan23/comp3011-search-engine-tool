@@ -141,3 +141,11 @@ def test_load_reads_existing_index(tmp_path):
 
     assert "Loaded index" in output
     assert cli.engine is not None
+
+def test_find_shows_did_you_mean_suggestion():
+    cli = make_cli_with_index()
+
+    output = cli.handle_command("find frends")
+
+    assert "Did you mean" in output
+    assert "friends instead of frends" in output

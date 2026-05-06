@@ -86,6 +86,20 @@ class SearchEngine:
 
         return sorted(results, key=lambda item: (-item[1], item[0]))
 
+    def suggest_terms(self, query: str) -> dict[str, str]:
+        query_terms = self.query_processor.clean_query(query)
+        vocabulary = set(self.index.terms.keys())
+
+        suggestions = {}
+
+        for term in query_terms:
+            suggestion = self.query_processor.suggest_term(term, vocabulary)
+
+            if suggestion is not None:
+                suggestions[term] = suggestion
+
+        return suggestions
+
     def print_term(self, term: str) -> dict:
         postings = self.index.postings_for(term)
 
