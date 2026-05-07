@@ -116,3 +116,101 @@ def test_allowed_by_robots_returns_boolean():
         crawler.allowed_by_robots("https://quotes.toscrape.com/"),
         bool,
     )
+
+@responses.activate
+def test_fetch_returns_none_for_404():
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/missing",
+        status=404,
+        content_type="text/html",
+    )
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_window=0,
+        obey_robots=False,
+    )
+
+    result = crawler.fetch(
+        "https://quotes.toscrape.com/missing"
+    )
+
+    assert result is None
+
+
+@responses.activate
+def test_fetch_skips_non_html_content():
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/file.pdf",
+        body="PDF",
+        status=200,
+        content_type="application/pdf",
+    )
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_window=0,
+        obey_robots=False,
+    )
+
+    result = crawler.fetch(
+        "https://quotes.toscrape.com/file.pdf"
+    )
+
+    assert result is None
+
+
+def test_normalise_url_drops_default_ports():
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        obey_robots=False,
+    )
+
+    result = crawler.normalise_url(
+        "HTTPS://Quotes.toscrape.com:443/page/1/"
+    )
+
+    assert result == "https://quotes.toscrape.com/page/1/"
+
+
+def test_extract_links_removes_duplicates():
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        obey_robots=False,
+    )
+
+    html = """
+    <html>
+        <body>
+            <a href="/page/1/">One</a>
+            <a href="/page/1/">Duplicate</a>
+        </body>
+    </html>
+    """
+
+    links = crawler.extract_links(
+        html,
+        "https://quotes.toscrape.com/",
+    )
+
+    assert len(links) == 1
+
+
+def test_allowed_by_robots_false_when_disallowed():
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        obey_robots=False,
+    )
+
+    crawler.robot_parser.parse([
+        "User-agent: *",
+        "Disallow: /private/",
+    ])
+
+    crawler.obey_robots = True
+
+    assert not crawler.allowed_by_robots(
+        "https://quotes.toscrape.com/private/page"
+    )
