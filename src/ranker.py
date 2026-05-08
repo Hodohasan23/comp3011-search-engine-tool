@@ -1,6 +1,13 @@
 import math
+from typing import Protocol
 
 from src.inverted_index import InvertedIndex
+
+
+class Ranker(Protocol):
+    def score(self, query_terms: list[str], url: str) -> float:
+        """Return a relevance score for a URL."""
+        ...
 
 
 class BM25Ranker:
@@ -44,3 +51,43 @@ class BM25Ranker:
             score += idf * (numerator / denominator)
 
         return score
+
+
+class TFIDFRanker:
+    def __init__(self, index: InvertedIndex) -> None:
+        self.index = index
+
+    def score(self, query_terms: list[str], url: str) -> float:
+        score = 0.0
+        total_docs = len(self.index.doc_lengths)
+
+        if total_docs == 0:
+            return 0.0
+
+        for term in query_terms:
+            postings = self.index.postings_for(term)
+
+            if url not in postings:
+                continue
+
+            tf = postings[url].tf
+            df = self.index.document_frequency(term)
+
+            sublinear_tf = 1 + math.log(tf)
+            smoothed_idf = math.log((total_docs + 1) / (df + 1)) + 1
+
+            score += sublinear_tf * smoothed_idf
+
+        return score
+
+
+def create_ranker(index: InvertedIndex, ranking_method: str = "bm25") -> Ranker:
+    method = ranking_method.lower()
+
+    if method == "bm25":
+        return BM25Ranker(index)
+
+    if method == "tfidf":
+        return TFIDFRanker(index)
+
+    raise ValueError(f"Unknown ranking method: {ranking_method}")

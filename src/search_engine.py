@@ -1,14 +1,14 @@
 from src.html_parser import tokenize
 from src.inverted_index import InvertedIndex
 from src.query_processor import QueryProcessor
-from src.ranker import BM25Ranker
+from src.ranker import Ranker, create_ranker
 
 
 class SearchEngine:
-    def __init__(self, index: InvertedIndex) -> None:
+    def __init__(self, index: InvertedIndex, ranking_method: str = "bm25") -> None:
         self.index = index
-        self.ranker = BM25Ranker(index)
         self.query_processor = QueryProcessor()
+        self.ranker: Ranker = create_ranker(index, ranking_method)
 
     def find(self, query: str) -> list[tuple[str, float]]:
         if self.query_processor.is_phrase_query(query):
