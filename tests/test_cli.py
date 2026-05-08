@@ -149,3 +149,12 @@ def test_find_shows_did_you_mean_suggestion():
 
     assert "Did you mean" in output
     assert "friends instead of frends" in output
+
+def test_find_supports_tfidf_ranking():
+    cli = make_cli_with_index()
+
+    output = cli.handle_command(
+        "find friends --ranking tfidf"
+    )
+
+    assert "result" in output.lower()

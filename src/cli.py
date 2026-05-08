@@ -3,12 +3,13 @@ import shlex
 
 from src.crawler import Crawler
 from src.inverted_index import InvertedIndex
-from src.search_engine import SearchEngine
 from src.metrics import Timer, index_summary
+from src.search_engine import SearchEngine
 
 
 DEFAULT_START_URL = "https://quotes.toscrape.com/"
 DEFAULT_INDEX_PATH = "data/index.json"
+DEFAULT_RANKING_METHOD = "bm25"
 
 
 class SearchCLI:
@@ -17,10 +18,12 @@ class SearchCLI:
         start_url: str = DEFAULT_START_URL,
         index_path: str = DEFAULT_INDEX_PATH,
         politeness_window: float = 6.0,
+        ranking_method: str = DEFAULT_RANKING_METHOD,
     ) -> None:
         self.start_url = start_url
         self.index_path = index_path
         self.politeness_window = politeness_window
+        self.ranking_method = ranking_method
         self.index: InvertedIndex | None = None
         self.engine: SearchEngine | None = None
 
@@ -44,7 +47,7 @@ class SearchCLI:
         timer.stop()
 
         self.index = index
-        self.engine = SearchEngine(index)
+        self.engine = SearchEngine(index, ranking_method=self.ranking_method)
 
         summary = index_summary(index, self.index_path)
 
@@ -59,9 +62,28 @@ class SearchCLI:
 
     def load(self) -> str:
         self.index = InvertedIndex.load(self.index_path)
-        self.engine = SearchEngine(self.index)
+        self.engine = SearchEngine(
+            self.index,
+            ranking_method=self.ranking_method,
+        )
 
         return f"Loaded index from {self.index_path}"
+
+    def set_ranking_method(self, ranking_method: str) -> str:
+        ranking_method = ranking_method.lower()
+
+        if ranking_method not in {"bm25", "tfidf"}:
+            return "Unknown ranking method. Use 'bm25' or 'tfidf'."
+
+        self.ranking_method = ranking_method
+
+        if self.index is not None:
+            self.engine = SearchEngine(
+                self.index,
+                ranking_method=self.ranking_method,
+            )
+
+        return f"Ranking method set to {self.ranking_method}"
 
     def print_term(self, term: str) -> str:
         if self.engine is None:
@@ -98,7 +120,10 @@ class SearchCLI:
 
             return f"No pages match '{query}'."
 
-        lines = [f"{len(results)} result(s) for '{query}':"]
+        lines = [
+            f"{len(results)} result(s) for '{query}' "
+            f"using {self.ranking_method}:"
+        ]
 
         for url, score in results:
             lines.append(f"  [{score:.3f}] {url}")
@@ -120,6 +145,11 @@ class SearchCLI:
         if command == "load":
             return self.load()
 
+        if command == "ranking":
+            if not args:
+                return f"Current ranking method: {self.ranking_method}"
+            return self.set_ranking_method(args[0])
+
         if command == "print":
             if not args:
                 return "Usage: print <word>"
@@ -128,16 +158,34 @@ class SearchCLI:
         if command == "find":
             if not args:
                 return "Usage: find <query>"
+
+            if "--ranking" in args:
+                ranking_index = args.index("--ranking")
+
+                if ranking_index + 1 >= len(args):
+                    return "Missing ranking method. Use bm25 or tfidf."
+
+                ranking_method = args[ranking_index + 1]
+                del args[ranking_index : ranking_index + 2]
+
+                ranking_output = self.set_ranking_method(ranking_method)
+
+                if ranking_output.startswith("Unknown"):
+                    return ranking_output
+
             return self.find(" ".join(args))
 
         if command == "help":
             return (
                 "Commands:\n"
-                "  build              crawl site, build index, save it\n"
-                "  load               load saved index\n"
-                "  print <word>       show postings for one word\n"
-                "  find <query>       find pages matching query terms\n"
-                "  quit / exit        leave the shell"
+                "  build                         crawl site, build index, save it\n"
+                "  load                          load saved index\n"
+                "  ranking [bm25|tfidf]          view or change ranking method\n"
+                "  print <word>                  show postings for one word\n"
+                "  find <query>                  find pages matching query terms\n"
+                "  find <query> --ranking tfidf  run query with TF-IDF ranking\n"
+                "  find <query> --ranking bm25   run query with BM25 ranking\n"
+                "  quit / exit                   leave the shell"
             )
 
         if command in {"quit", "exit"}:
