@@ -158,3 +158,43 @@ def test_find_supports_tfidf_ranking():
     )
 
     assert "result" in output.lower()
+
+def test_ranking_command_shows_current_method():
+    cli = SearchCLI()
+
+    output = cli.handle_command("ranking")
+
+    assert output == "Current ranking method: bm25"
+
+
+def test_ranking_command_updates_method():
+    cli = make_cli_with_index()
+
+    output = cli.handle_command("ranking tfidf")
+
+    assert output == "Ranking method set to tfidf"
+    assert cli.ranking_method == "tfidf"
+
+
+def test_ranking_command_rejects_unknown_method():
+    cli = SearchCLI()
+
+    output = cli.handle_command("ranking unknown")
+
+    assert "Unknown ranking method" in output
+
+
+def test_find_rejects_missing_ranking_method():
+    cli = make_cli_with_index()
+
+    output = cli.handle_command("find good --ranking")
+
+    assert "Missing ranking method" in output
+
+
+def test_find_rejects_unknown_inline_ranking_method():
+    cli = make_cli_with_index()
+
+    output = cli.handle_command("find good --ranking unknown")
+
+    assert "Unknown ranking method" in output
