@@ -5,6 +5,9 @@ from pathlib import Path
 from src.html_parser import html_to_tokens
 
 
+INDEX_SCHEMA_VERSION = 1
+
+
 @dataclass
 class Posting:
     tf: int
@@ -38,6 +41,7 @@ class InvertedIndex:
 
     def save(self, path: str) -> None:
         data = {
+            "version": INDEX_SCHEMA_VERSION,
             "terms": {
                 term: {
                     url: asdict(posting)
@@ -57,6 +61,13 @@ class InvertedIndex:
     def load(cls, path: str) -> "InvertedIndex":
         with open(path, encoding="utf-8") as file:
             data = json.load(file)
+
+        version = data.get("version")
+
+        if version != INDEX_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported index schema version: {version}"
+            )
 
         index = cls()
         index.doc_lengths = data["doc_lengths"]

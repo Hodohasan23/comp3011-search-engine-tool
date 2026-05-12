@@ -1,4 +1,9 @@
 from src.inverted_index import InvertedIndex
+import json
+
+import pytest
+
+from src.inverted_index import INDEX_SCHEMA_VERSION
 
 
 def test_add_document_indexes_terms():
@@ -39,3 +44,32 @@ def test_save_and_load_round_trip(tmp_path):
 
     assert loaded.postings_for("good")["page1"].tf == 1
     assert loaded.doc_lengths["page1"] == 2
+
+def test_saved_index_includes_schema_version(tmp_path):
+    index = InvertedIndex()
+    index.add_document("page1", "<p>good friends</p>")
+
+    path = tmp_path / "index.json"
+    index.save(str(path))
+
+    with open(path, encoding="utf-8") as file:
+        data = json.load(file)
+
+    assert data["version"] == INDEX_SCHEMA_VERSION
+
+
+def test_load_rejects_unsupported_schema_version(tmp_path):
+    path = tmp_path / "index.json"
+
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(
+            {
+                "version": 999,
+                "terms": {},
+                "doc_lengths": {},
+            },
+            file,
+        )
+
+    with pytest.raises(ValueError):
+        InvertedIndex.load(str(path))
