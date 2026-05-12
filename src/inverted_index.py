@@ -15,12 +15,16 @@ class Posting:
 
 
 class InvertedIndex:
-    def __init__(self) -> None:
+    def __init__(self, remove_stopwords: bool = True) -> None:
+        self.remove_stopwords = remove_stopwords
         self.terms: dict[str, dict[str, Posting]] = {}
         self.doc_lengths: dict[str, int] = {}
 
     def add_document(self, url: str, html: str) -> None:
-        tokens = html_to_tokens(html)
+        tokens = html_to_tokens(
+            html,
+            remove_stopwords=self.remove_stopwords,
+        )
         self.doc_lengths[url] = len(tokens)
 
         for position, token in enumerate(tokens):
@@ -42,6 +46,7 @@ class InvertedIndex:
     def save(self, path: str) -> None:
         data = {
             "version": INDEX_SCHEMA_VERSION,
+            "remove_stopwords": self.remove_stopwords,
             "terms": {
                 term: {
                     url: asdict(posting)
@@ -69,7 +74,9 @@ class InvertedIndex:
                 f"Unsupported index schema version: {version}"
             )
 
-        index = cls()
+        index = cls(
+            remove_stopwords=data.get("remove_stopwords", True)
+        )
         index.doc_lengths = data["doc_lengths"]
 
         index.terms = {
