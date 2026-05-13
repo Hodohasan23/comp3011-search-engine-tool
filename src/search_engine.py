@@ -100,6 +100,35 @@ class SearchEngine:
 
         return suggestions
 
+    def snippet(self, url: str, query_terms: list[str], window: int = 6) -> str:
+        tokens = self.index.doc_tokens.get(url, [])
+
+        if not tokens:
+            return ""
+
+        query_set = set(query_terms)
+
+        match_position = 0
+
+        for position, token in enumerate(tokens):
+            if token in query_set:
+                match_position = position
+                break
+
+        start = max(0, match_position - window)
+        end = min(len(tokens), match_position + window + 1)
+
+        snippet_tokens = tokens[start:end]
+        snippet_text = " ".join(snippet_tokens)
+
+        if start > 0:
+            snippet_text = "... " + snippet_text
+
+        if end < len(tokens):
+            snippet_text = snippet_text + " ..."
+
+        return snippet_text
+
     def print_term(self, term: str) -> dict:
         postings = self.index.postings_for(term)
 

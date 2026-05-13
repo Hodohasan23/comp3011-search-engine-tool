@@ -125,8 +125,14 @@ class SearchCLI:
             f"using {self.ranking_method}:"
         ]
 
+        query_terms = self.engine.query_processor.clean_query(query)
+
         for url, score in results:
+            snippet = self.engine.snippet(url, query_terms)
             lines.append(f"  [{score:.3f}] {url}")
+
+            if snippet:
+                lines.append(f"      ... {snippet} ...")
 
         return "\n".join(lines)
 

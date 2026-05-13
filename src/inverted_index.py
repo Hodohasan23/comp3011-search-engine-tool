@@ -19,13 +19,16 @@ class InvertedIndex:
         self.remove_stopwords = remove_stopwords
         self.terms: dict[str, dict[str, Posting]] = {}
         self.doc_lengths: dict[str, int] = {}
+        self.doc_tokens: dict[str, list[str]] = {}
 
     def add_document(self, url: str, html: str) -> None:
         tokens = html_to_tokens(
             html,
             remove_stopwords=self.remove_stopwords,
         )
+
         self.doc_lengths[url] = len(tokens)
+        self.doc_tokens[url] = tokens
 
         for position, token in enumerate(tokens):
             if token not in self.terms:
@@ -55,6 +58,7 @@ class InvertedIndex:
                 for term, postings in self.terms.items()
             },
             "doc_lengths": self.doc_lengths,
+            "doc_tokens": self.doc_tokens,
         }
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +82,7 @@ class InvertedIndex:
             remove_stopwords=data.get("remove_stopwords", True)
         )
         index.doc_lengths = data["doc_lengths"]
+        index.doc_tokens = data.get("doc_tokens", {})
 
         index.terms = {
             term: {

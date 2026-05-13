@@ -74,3 +74,16 @@ def test_phrase_search_rejects_non_consecutive_terms():
     engine = SearchEngine(index)
 
     assert engine.find('"good friends"') == []
+
+def test_snippet_returns_context_around_query_term():
+    index = InvertedIndex()
+    index.add_document(
+        "page1",
+        "<p>alpha beta gamma good friends delta epsilon zeta</p>",
+    )
+
+    engine = SearchEngine(index)
+
+    snippet = engine.snippet("page1", ["good"], window=2)
+
+    assert "gamma good friends" in snippet
