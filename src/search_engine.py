@@ -1,7 +1,12 @@
+import re
+
 from src.html_parser import tokenize
 from src.inverted_index import InvertedIndex
 from src.query_processor import QueryProcessor
 from src.ranker import Ranker, create_ranker
+
+
+PHRASE_PATTERN = re.compile(r'"([^"]*)"')
 
 
 class SearchEngine:
@@ -11,80 +16,101 @@ class SearchEngine:
         self.ranker: Ranker = create_ranker(index, ranking_method)
 
     def find(self, query: str) -> list[tuple[str, float]]:
-        if self.query_processor.is_phrase_query(query):
-            return self.find_phrase(query)
+        phrases, free_terms = self.parse_query(query)
 
-        query_terms = tokenize(query)
-
-        if not query_terms:
-            return []
-
-        matching_urls: set[str] | None = None
-
-        for term in query_terms:
-            urls = set(self.index.postings_for(term).keys())
-
-            if matching_urls is None:
-                matching_urls = urls
-            else:
-                matching_urls = matching_urls.intersection(urls)
-
-        if not matching_urls:
-            return []
-
-        results = [
-            (url, self.ranker.score(query_terms, url))
-            for url in matching_urls
-        ]
-
-        return sorted(results, key=lambda item: (-item[1], item[0]))
-
-    def find_phrase(self, query: str) -> list[tuple[str, float]]:
-        phrase_terms = self.query_processor.extract_phrase_terms(query)
-
-        if not phrase_terms:
+        if not phrases and not free_terms:
             return []
 
         candidate_urls: set[str] | None = None
 
-        for term in phrase_terms:
+        for term in free_terms:
             urls = set(self.index.postings_for(term).keys())
+
+            if not urls:
+                return []
 
             if candidate_urls is None:
                 candidate_urls = urls
             else:
-                candidate_urls = candidate_urls.intersection(urls)
+                candidate_urls &= urls
+
+        for phrase_terms in phrases:
+            phrase_urls = self.urls_containing_phrase(phrase_terms)
+
+            if candidate_urls is None:
+                candidate_urls = phrase_urls
+            else:
+                candidate_urls &= phrase_urls
+
+            if not candidate_urls:
+                return []
 
         if not candidate_urls:
             return []
 
-        matched_urls = []
+        scoring_terms = list(free_terms)
 
-        for url in candidate_urls:
-            first_term_positions = self.index.postings_for(
-                phrase_terms[0]
-            )[url].positions
-
-            for start_position in first_term_positions:
-                phrase_matches = True
-
-                for offset, term in enumerate(phrase_terms[1:], start=1):
-                    positions = self.index.postings_for(term)[url].positions
-
-                    if start_position + offset not in positions:
-                        phrase_matches = False
-                        break
-
-                if phrase_matches:
-                    matched_urls.append(url)
-                    break
+        for phrase in phrases:
+            scoring_terms.extend(phrase)
 
         results = [
-            (url, self.ranker.score(phrase_terms, url))
-            for url in matched_urls
+            (url, self.ranker.score(scoring_terms, url))
+            for url in candidate_urls
         ]
 
         return sorted(results, key=lambda item: (-item[1], item[0]))
+
+    def parse_query(self, query: str) -> tuple[list[list[str]], list[str]]:
+        phrases: list[list[str]] = []
+
+        def extract_phrase(match: re.Match[str]) -> str:
+            phrase_tokens = tokenize(match.group(1))
+
+            if phrase_tokens:
+                phrases.append(phrase_tokens)
+
+            return " "
+
+        remaining_query = PHRASE_PATTERN.sub(extract_phrase, query)
+        free_terms = tokenize(remaining_query)
+
+        return phrases, free_terms
+
+    def urls_containing_phrase(self, phrase_terms: list[str]) -> set[str]:
+        if not phrase_terms:
+            return set()
+
+        if len(phrase_terms) == 1:
+            return set(self.index.postings_for(phrase_terms[0]).keys())
+
+        postings_per_term = [
+            self.index.postings_for(term)
+            for term in phrase_terms
+        ]
+
+        if any(not postings for postings in postings_per_term):
+            return set()
+
+        candidate_urls = set(postings_per_term[0].keys())
+
+        for postings in postings_per_term[1:]:
+            candidate_urls &= set(postings.keys())
+
+        matching_urls = set()
+
+        for url in candidate_urls:
+            shifted_position_sets = []
+
+            for offset, postings in enumerate(postings_per_term):
+                positions = postings[url].positions
+                shifted_position_sets.append(
+                    {position - offset for position in positions}
+                )
+
+            if set.intersection(*shifted_position_sets):
+                matching_urls.add(url)
+
+        return matching_urls
 
     def suggest_terms(self, query: str) -> dict[str, str]:
         query_terms = self.query_processor.clean_query(query)
@@ -107,7 +133,6 @@ class SearchEngine:
             return ""
 
         query_set = set(query_terms)
-
         match_position = 0
 
         for position, token in enumerate(tokens):

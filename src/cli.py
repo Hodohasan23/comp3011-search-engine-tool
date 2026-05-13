@@ -137,7 +137,7 @@ class SearchCLI:
         return "\n".join(lines)
 
     def handle_command(self, line: str) -> str:
-        parts = shlex.split(line)
+        parts = shlex.split(line, posix=False)
 
         if not parts:
             return ""
