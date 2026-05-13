@@ -1,4 +1,5 @@
 import responses
+import time
 
 from src.crawler import Crawler
 
@@ -214,3 +215,157 @@ def test_allowed_by_robots_false_when_disallowed():
     assert not crawler.allowed_by_robots(
         "https://quotes.toscrape.com/private/page"
     )
+
+@responses.activate
+def test_fetch_returns_none_after_all_retries_fail():
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/unavailable",
+        status=503,
+        content_type="text/html",
+    )
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/unavailable",
+        status=503,
+        content_type="text/html",
+    )
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/unavailable",
+        status=503,
+        content_type="text/html",
+    )
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_window=0,
+        obey_robots=False,
+        backoff=0,
+    )
+
+    result = crawler.fetch("https://quotes.toscrape.com/unavailable")
+
+    assert result is None
+    assert crawler.failed["https://quotes.toscrape.com/unavailable"] == (
+        "Maximum retries exceeded"
+    )
+
+
+@responses.activate
+def test_fetch_handles_connection_error():
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/broken",
+        body=responses.ConnectionError("connection failed"),
+    )
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_window=0,
+        obey_robots=False,
+        backoff=0,
+        max_retries=1,
+    )
+
+    result = crawler.fetch("https://quotes.toscrape.com/broken")
+
+    assert result is None
+    assert crawler.failed["https://quotes.toscrape.com/broken"] == (
+        "Maximum retries exceeded"
+    )
+
+
+def test_extract_links_ignores_mailto_javascript_and_tel():
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        obey_robots=False,
+    )
+
+    html = """
+    <html>
+        <body>
+            <a href="mailto:test@example.com">Email</a>
+            <a href="javascript:void(0)">JS</a>
+            <a href="tel:12345">Phone</a>
+            <a href="/page/2/">Valid</a>
+        </body>
+    </html>
+    """
+
+    links = crawler.extract_links(html, "https://quotes.toscrape.com/")
+
+    assert links == ["https://quotes.toscrape.com/page/2/"]
+
+
+@responses.activate
+def test_crawl_respects_max_pages():
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/",
+        body="""
+        <html>
+            <body>
+                <a href="/page/2/">Next</a>
+            </body>
+        </html>
+        """,
+        status=200,
+        content_type="text/html",
+    )
+
+    responses.add(
+        responses.GET,
+        "https://quotes.toscrape.com/page/2/",
+        body="<html><body>Second page</body></html>",
+        status=200,
+        content_type="text/html",
+    )
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_window=0,
+        obey_robots=False,
+    )
+
+    pages = crawler.crawl(max_pages=1)
+
+    assert len(pages) == 1
+
+
+def test_wait_for_politeness_sleeps_when_needed():
+    sleeps = []
+
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_window=10,
+        obey_robots=False,
+        sleep=sleeps.append,
+    )
+
+    crawler.last_request_time = time.monotonic()
+
+    crawler.wait_for_politeness()
+
+    assert sleeps
+
+@responses.activate
+def test_crawl_records_disallowed_url():
+    crawler = Crawler(
+        "https://quotes.toscrape.com/",
+        politeness_window=0,
+        obey_robots=False,
+    )
+
+    crawler.robot_parser.parse(
+        [
+            "User-agent: *",
+            "Disallow: /",
+        ]
+    )
+    crawler.obey_robots = True
+
+    pages = crawler.crawl()
+
+    assert pages == {}
+    assert "https://quotes.toscrape.com/" in crawler.disallowed
