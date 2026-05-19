@@ -1,7 +1,6 @@
 # comp3011-search-engine-tool
 
-**A command-line search engine built in Python.**
-Crawls `quotes.toscrape.com`, builds a positional inverted index, and retrieves ranked results via BM25 and TF-IDF.
+A full-stack information retrieval system built from scratch in Python. Crawls `quotes.toscrape.com`, builds a positional inverted index, and retrieves ranked results from a command-line shell.
 
 ```
 121 tests · 99% coverage · MyPy · Ruff · GitHub Actions CI
@@ -9,40 +8,17 @@ Crawls `quotes.toscrape.com`, builds a positional inverted index, and retrieves 
 
 ---
 
-## What it does
-
-The tool ships four required commands and several features beyond the brief:
-
-| Command | Description |
-|---|---|
-| `build` | Crawl the site, build the index, save to disk |
-| `load` | Load a previously built index |
-| `print <word>` | Show the inverted index entry for a word |
-| `find <query>` | Retrieve ranked pages matching a query |
-
-Beyond the brief: phrase queries, BM25 and TF-IDF ranking, runtime ranking selection, did-you-mean suggestions, and search result snippets.
-
----
-
-## Installation
+## Quickstart
 
 ```bash
 git clone https://github.com/Hodohasan23/comp3011-search-engine-tool.git
 cd comp3011-search-engine-tool
 python -m pip install -r requirements.txt
-```
-
----
-
-## Usage
-
-```bash
 python -m src.main
 ```
 
 ```
 > build
-> load
 > find good friends
 > find "good friends"
 > find good friends --ranking tfidf
@@ -51,36 +27,46 @@ python -m src.main
 > quit
 ```
 
-### Phrase queries
+---
 
-Wrap a query in double quotes to match consecutive tokens only:
+## Features
+
+| Category | Feature |
+|---|---|
+| **Crawling** | Polite BFS, configurable delay (default 6 s), robots.txt, retry + exponential backoff, same-host restriction, URL normalisation, non-HTML rejection |
+| **Indexing** | Positional inverted index, stop-word filtering, case-insensitive tokenisation, document-length tracking, schema versioning, JSON persistence |
+| **Retrieval** | Boolean AND, BM25, TF-IDF, runtime ranking selection, positional phrase queries, did-you-mean suggestions, search result snippets |
+| **Engineering** | 121 tests, 99% coverage, MyPy, Ruff, GitHub Actions CI, fully mocked HTTP suite |
+
+---
+
+## Sample session
 
 ```
+> build
+Crawling https://quotes.toscrape.com/ ...
+Built index for 214 pages with 4445 unique terms and 36821 tokens.
+Saved to data/index.json. Build completed in 1302.47 seconds.
+
 > find "good friends"
 2 result(s) for '"good friends"' using bm25:
   [3.589] https://quotes.toscrape.com/tag/contentment/page/1/
-      ... viewing tag contentment good friends good books ...
-```
+      ... viewing tag contentment good friends good books sleepy conscience ...
+  [2.936] https://quotes.toscrape.com/tag/friendship/
+      ... unhappy marriage good friends good books sleepy conscience ...
 
-### Ranking selection
-
-Switch between BM25 and TF-IDF at runtime:
-
-```
-> find good friends --ranking bm25
-> find good friends --ranking tfidf
-> ranking tfidf
-```
-
-### Did-you-mean
-
-When a query returns no results, the engine suggests the closest vocabulary match:
-
-```
 > find indiffrence
 No pages match 'indiffrence'.
 Did you mean:
   indifference instead of indiffrence
+
+> print indifference
+{
+  "https://quotes.toscrape.com/tag/indifference/page/1/": {
+    "tf": 3,
+    "positions": [14, 28, 61]
+  }
+}
 ```
 
 ---
@@ -88,57 +74,153 @@ Did you mean:
 ## Architecture
 
 ```
-src/main.py          argparse entry point
-src/cli.py           REPL — build / load / print / find / ranking / quit
-src/crawler.py       polite BFS crawler with retries, robots.txt, URL normalisation
-src/html_parser.py   visible text extraction, tokenisation, stop-word filtering
-src/inverted_index.py  term → URL → {tf, positions}, JSON persistence, schema versioning
-src/search_engine.py   AND retrieval, phrase search, did-you-mean, snippet generation
-src/ranker.py        BM25Ranker, TFIDFRanker, runtime ranking selection
-src/query_processor.py  query cleaning, phrase detection, Levenshtein suggestions
-src/metrics.py       index summary, timer
+                        ┌─────────────────┐
+                        │   src/main.py   │
+                        │ argparse · REPL │
+                        └────────┬────────┘
+                                 │ instantiates
+                        ┌────────▼────────┐
+                        │   src/cli.py    │
+                        │ command dispatch│
+                        └──┬──────────┬──┘
+                           │          │
+               ┌───────────▼──┐   ┌───▼──────────────┐
+               │ src/crawler  │   │ data/index.json   │
+               │ polite BFS   │   │ versioned index   │
+               │ robots.txt   │   └───────┬───────────┘
+               │ retries      │           │ load
+               └──────┬───────┘           │
+                      │ {url: html}        │
+                      ▼                   ▼
+               ┌──────────────────────────────────┐
+               │        src/html_parser.py         │
+               │  visible text · tokens · stopwords│
+               └──────────────┬───────────────────┘
+                              │ tokens
+                              ▼
+               ┌──────────────────────────────────┐
+               │      src/inverted_index.py        │
+               │  term → URL → {tf, positions}     │
+               │  doc_lengths · doc_tokens         │
+               └──────────────┬───────────────────┘
+                              │
+               ┌──────────────▼───────────────────┐
+               │       src/search_engine.py        │
+               │  AND · phrase · snippets · DYM    │
+               └──────────────┬───────────────────┘
+                              │
+               ┌──────────────▼───────────────────┐
+               │          src/ranker.py            │
+               │  BM25Ranker · TFIDFRanker         │
+               │  create_ranker factory            │
+               └──────────────────────────────────┘
 ```
+
+**Data flow — build:** `cli` → `crawler` fetches pages → `html_parser` tokenises → `inverted_index` indexes and saves.
+
+**Data flow — find:** `cli` → `search_engine` queries index → `ranker` scores candidates → ranked results with snippets returned to shell.
+
+Each module has a single responsibility. The crawler knows nothing about indexing. The ranker knows nothing about retrieval logic. The CLI is a thin shell — both crawler and engine are constructor-injectable so the entire test suite runs without a network connection.
 
 ---
 
-## Index structure
+## Index format
 
-The index is saved as a single versioned JSON file:
+A single versioned UTF-8 JSON file:
 
 ```json
 {
   "version": 1,
+  "doc_lengths": {
+    "https://quotes.toscrape.com/": 82
+  },
+  "doc_tokens": {
+    "https://quotes.toscrape.com/": ["life", "change", "world", "..."]
+  },
   "terms": {
     "indifference": {
-      "page_url": { "tf": 2, "positions": [14, 37] }
+      "https://quotes.toscrape.com/tag/indifference/page/1/": {
+        "tf": 3,
+        "positions": [14, 28, 61]
+      }
     }
-  },
-  "doc_lengths": { "page_url": 82 },
-  "doc_tokens":  { "page_url": ["quote", "life", ...] }
+  }
 }
 ```
 
-Positions power phrase queries and snippet generation. `doc_tokens` stores the full token sequence per document for snippet extraction. `doc_lengths` feeds BM25 document-length normalisation.
+`positions` are 0-based token offsets after stop-word removal — they power both phrase queries and snippet extraction. `doc_tokens` stores the full token sequence per page so snippets can be generated without re-parsing HTML. `doc_lengths` feeds BM25 document-length normalisation.
 
 ---
 
 ## Ranking
 
-### BM25
-
-Okapi BM25 with configurable `k1` and `b`. Balances term frequency, inverse document frequency, and document-length normalisation:
+### BM25 (default)
 
 ```
-score = Σ IDF(t) · (tf · (k1 + 1)) / (tf + k1 · (1 - b + b · dl/avgdl))
+score = Σ  IDF(t) · tf · (k1 + 1) / (tf + k1 · (1 − b + b · dl/avgdl))
+
+IDF(t) = log(1 + (N − df + 0.5) / (df + 0.5))
+k1 = 1.5,  b = 0.75
 ```
+
+Document-length normalisation makes BM25 outperform raw TF-IDF on short pages — a high-frequency term on a short page scores differently to the same frequency on a long one.
 
 ### TF-IDF
 
-Sub-linear TF with smoothed IDF:
+```
+score = Σ  (1 + log tf) · (log((N+1)/(df+1)) + 1)
+```
+
+Sub-linear TF dampens repeated terms. Smoothed IDF avoids division by zero.
+
+Switch at runtime:
 
 ```
-score = Σ (1 + log tf) · (log((N+1)/(df+1)) + 1)
+> ranking tfidf
+> find good friends --ranking bm25
 ```
+
+---
+
+## Phrase queries
+
+Positional posting intersection (Manning §2.4.1). For a phrase `[t0, t1, ..., tn]`:
+
+1. Find URLs containing all terms.
+2. For each URL, shift each term's position set by its phrase offset: `{p − offset}`.
+3. Intersect all shifted sets — non-empty intersection means consecutive occurrence.
+
+```
+> find "good friends"          # phrase only
+> find "good friends" matter   # phrase AND free term
+```
+
+---
+
+## Did-you-mean
+
+When a query returns no results, each unrecognised token is passed through `QueryProcessor.suggest_term`:
+
+1. Pre-filter vocabulary by length (`|len(vocab) − len(query)| ≤ 2`).
+2. Compute Levenshtein edit distance against candidates.
+3. Return the closest match within distance 2, breaking ties alphabetically.
+
+---
+
+## Design decisions
+
+| Decision | Chosen | Alternatives considered | Rationale |
+|---|---|---|---|
+| Index storage | Single JSON file | SQLite, pickle, Whoosh | Brief requires a single file; human-readable; trivially portable; schema evolution via version field |
+| Document IDs | Full URLs | Integer doc IDs | Readable in output and debugging; no lookup table needed; index fits in memory at this scale |
+| Crawler frontier | `collections.deque` | `list.pop(0)`, `set` | O(1) at both ends; preserves BFS order; `seen` set deduplicates before enqueue |
+| Tokeniser | `re.findall("[a-z0-9]+")` | NLTK, `str.split` | No extra dependency; matches brief; fast; handles punctuation and case in one step |
+| Stop-words | Inline 60-word list | NLTK, sklearn, none | Brief requires stop-word removal; inline avoids dependency; query example words deliberately kept |
+| Ranking | BM25 default + TF-IDF | Unranked, BM25 only | BM25 is stronger on short documents; exposing both allows runtime comparison; satisfies 80–100 rubric band |
+| Politeness | Injectable `sleep` callable | Hard-coded `time.sleep(6)` | Tests pass `sleep=lambda t: None`; full suite runs in under 7 s without waiting |
+| HTTP mocking | `responses` library | `unittest.mock.patch` | Less brittle; richer response objects; deterministic offline suite |
+| Search semantics | AND across terms | OR | Brief's `find good friends` example implies AND; matches user expectation for a precision-oriented tool |
+| Phrase positions | Stored in index | Re-parsed on query | Avoids re-parsing HTML at query time; enables snippet extraction from the same structure |
 
 ---
 
@@ -156,43 +238,88 @@ python -m ruff check src tests
 | Coverage | 99% |
 | MyPy | Passing |
 | Ruff | Passing |
+| HTTP | Fully mocked via `responses` |
+| Runtime | ~7 s |
 
-The suite is fully offline — all HTTP is mocked via the `responses` library. Edge cases covered include: retry exhaustion, robots.txt disallow, malformed URLs, empty queries, stop-word-only queries, phrase intersection, Levenshtein suggestions, and schema version rejection.
+**Crawler** — URL normalisation (port, case, fragment, default ports), link extraction (relative, absolute, mailto, javascript, empty href, href-as-list, malformed HTML), BFS deduplication, external-host skip, max-pages cap, 404, 500-then-200 retry recovery, ConnectionError, Timeout, all-retries-fail, non-HTML skip, politeness window (positive sleep, zero-delay, default ≥ 6 s), robots.txt (disallow, 404 allow-all, network failure allow-all).
+
+**Inverted index** — tokenisation, stop-word filtering, position tracking, document-length tracking, empty documents, unknown terms, JSON round-trip, schema version rejection.
+
+**Search engine** — single-word, multi-word AND, empty query, whitespace query, stop-word-only query, duplicate terms, phrase match, phrase non-match, phrase + free term intersection, did-you-mean, snippet with match, snippet with no match, snippet for unknown URL.
+
+**Ranker** — BM25 and TF-IDF positive scores, zero scores for non-matching terms, empty index early return, average document length, multi-term queries.
+
+**CLI** — all four commands, ranking selection, inline `--ranking` flag, unknown command, missing arguments, missing index, did-you-mean display, REPL loop (quit, exit, help, blank, unknown, error trapping).
 
 ---
 
-## Design decisions
+## Dependencies
 
-**Positional index over term-presence index.** Storing token offsets enables phrase queries, snippet extraction, and proximity-aware retrieval without a second data structure.
+| Package | Purpose |
+|---|---|
+| `requests` | HTTP client for crawling (recommended by brief §1.c) |
+| `beautifulsoup4` | HTML parsing and visible text extraction (recommended by brief §1.c) |
+| `pytest` | Test runner |
+| `pytest-cov` | Coverage reporting |
+| `responses` | HTTP mocking for offline, deterministic tests |
+| `ruff` | Linting and style enforcement |
+| `mypy` | Static type checking |
 
-**JSON over SQLite or pickle.** The brief requires a single file. JSON is human-readable, trivially portable, and supports schema evolution through an explicit version field.
+---
 
-**BM25 as default, TF-IDF as alternative.** BM25 outperforms TF-IDF on short documents because of document-length normalisation. Exposing both at runtime demonstrates separation between indexing and ranking and allows direct comparison.
+## Project structure
 
-**Set-union deduplication in the frontier.** The crawler tracks `seen` URLs separately from `visited` pages — duplicates are filtered before they enter the queue, not after.
+```
+comp3011-search-engine-tool/
+├── src/
+│   ├── cli.py               command dispatch and REPL
+│   ├── crawler.py           polite BFS crawler
+│   ├── html_parser.py       tokenisation and text extraction
+│   ├── inverted_index.py    index structure, persistence, schema
+│   ├── main.py              argparse entry point
+│   ├── metrics.py           index summary and timer
+│   ├── query_processor.py   query cleaning and Levenshtein
+│   ├── ranker.py            BM25 and TF-IDF rankers
+│   └── search_engine.py     retrieval, phrase search, snippets
+├── tests/
+│   ├── test_cli.py
+│   ├── test_crawler.py
+│   ├── test_html_parser.py
+│   ├── test_inverted_index.py
+│   ├── test_main.py
+│   ├── test_metrics.py
+│   ├── test_query_processor.py
+│   ├── test_ranker.py
+│   ├── test_search_engine.py
+│   ├── test_additional.py
+│   └── test_coverage.py
+├── data/
+├── .github/workflows/
+├── README.md
+├── technical_log.md
+├── requirements.txt
+├── pyproject.toml
+└── pytest.ini
+```
 
 ---
 
 ## Limitations
 
-- Single-threaded crawling
-- ASCII tokenisation only (curly quotes stripped)
+- Single-threaded crawler — re-crawl is always a full re-fetch
+- ASCII tokenisation — curly quotes stripped, non-Latin scripts unsupported
 - No stemming or lemmatisation
-- No PageRank or link-analysis
+- No PageRank or link-graph analysis
+- Stop-word list is binary — no weighted or context-sensitive filtering
 
-All intentionally excluded to stay within coursework scope.
-
----
-
-## Stack
-
-Python 3.12 · requests · BeautifulSoup4 · pytest · pytest-cov · responses · Ruff · MyPy
+All intentionally excluded to stay within coursework scope and prioritise correctness over completeness.
 
 ---
 
 ## References
 
-- Manning, Raghavan & Schütze — *Introduction to Information Retrieval* (Cambridge, 2008)
+- Manning, Raghavan & Schütze — *Introduction to Information Retrieval* (Cambridge, 2008), ch. 1–6
 - [Python Requests documentation](https://docs.python-requests.org/)
 - [Beautiful Soup documentation](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
+- [responses library](https://github.com/getsentry/responses)
 - COMP3011 lecture slides 9–12
