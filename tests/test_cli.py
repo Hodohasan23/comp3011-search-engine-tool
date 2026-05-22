@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from src.cli import SearchCLI
-from src.inverted_index import InvertedIndex
-from src.search_engine import SearchEngine
+from src.main import SearchCLI
+from src.indexer import InvertedIndex
+from src.search import SearchEngine
 
 
 def make_cli_with_index() -> SearchCLI:
@@ -111,10 +111,10 @@ def test_build_creates_index_file(tmp_path):
                 "page2": "<p>good books</p>",
             }
 
-    from src import cli as cli_module
+    from src import main as main_module
 
-    original_crawler = cli_module.Crawler
-    cli_module.Crawler = lambda *args, **kwargs: FakeCrawler()
+    original_crawler = main_module.Crawler
+    main_module.Crawler = lambda *args, **kwargs: FakeCrawler()
 
     try:
         output = cli.build()
@@ -123,11 +123,11 @@ def test_build_creates_index_file(tmp_path):
         assert Path(tmp_path / "index.json").exists()
 
     finally:
-        cli_module.Crawler = original_crawler
+        main_module.Crawler = original_crawler
 
 
 def test_load_reads_existing_index(tmp_path):
-    from src.inverted_index import InvertedIndex
+    from src.indexer import InvertedIndex
 
     index_path = tmp_path / "index.json"
 

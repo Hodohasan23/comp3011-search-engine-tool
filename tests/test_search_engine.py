@@ -1,5 +1,5 @@
-from src.inverted_index import InvertedIndex
-from src.search_engine import SearchEngine
+from src.indexer import InvertedIndex
+from src.search import SearchEngine
 
 
 def test_find_single_word_query():

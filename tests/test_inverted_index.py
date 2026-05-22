@@ -1,9 +1,9 @@
-from src.inverted_index import InvertedIndex
+from src.indexer import InvertedIndex
 import json
 
 import pytest
 
-from src.inverted_index import INDEX_SCHEMA_VERSION
+from src.indexer import INDEX_SCHEMA_VERSION
 
 
 def test_add_document_indexes_terms():
