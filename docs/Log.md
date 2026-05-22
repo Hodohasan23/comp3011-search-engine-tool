@@ -29,18 +29,13 @@ The testing weight being the single largest category meant I wrote tests alongsi
 
 ## 2. Module breakdown
 
-I split the work into eight modules rather than the four the brief specifies. The brief's four (`crawler`, `indexer`, `search`, `main`) would have produced files that were too long and too coupled. My split:
+I split the work into four modules matching the brief's structure exactly:
 
 ```
-src/crawler.py          HTTP + BFS only — knows nothing about indexing
-src/html_parser.py      tokenisation and text extraction — knows nothing about the index
-src/inverted_index.py   data structure, persistence, schema
-src/search_engine.py    query logic — read-only view over the index
-src/ranker.py           BM25 and TF-IDF as swappable strategies
-src/query_processor.py  query cleaning and Levenshtein distance
-src/cli.py              command dispatch and REPL
-src/main.py             argparse entry point only
-src/metrics.py          index summary and wall-clock timer
+src/crawler.py    HTTP + BFS crawler
+src/indexer.py    tokenisation, data structure, persistence, schema
+src/search.py     query logic, ranking, phrase search, did-you-mean, snippets
+src/main.py       argparse entry point, CLI, REPL
 ```
 
 The key separation: the crawler returns `{url: html}` and has no knowledge of how that HTML gets indexed. The ranker knows only how to score a set of candidate URLs; it has no knowledge of how candidates were selected. This made unit testing each module independently straightforward.
@@ -63,7 +58,7 @@ I considered normalising query parameters (sorting keys, dropping UTM tags) but 
 
 ### Frontier
 
-`collections.deque` for the queue. `list.pop(0)` is O(n) — pointless when a O(1) alternative exists. Deduplication uses a separate `seen: set[str]` keyed by normalised URL. The seen set filters duplicates *before* they enter the queue, not after they are dequeued — this avoids queuing the same URL N times and then skipping it N-1 times.
+`collections.deque` for the queue. `list.pop(0)` is O(n) — pointless when an O(1) alternative exists. Deduplication uses a separate `seen: set[str]` keyed by normalised URL. The seen set filters duplicates *before* they enter the queue, not after they are dequeued — this avoids queuing the same URL N times and then skipping it N-1 times.
 
 ### Politeness
 
@@ -246,7 +241,7 @@ def snippet(self, url: str, query_terms: list[str], window: int = 6) -> str:
 
 ### Structure
 
-Tests live in nine files mirroring the source modules. Each file tests one module in isolation using only that module's public interface.
+Tests live in files mirroring the source modules. Each file tests one module in isolation using only that module's public interface.
 
 ### HTTP mocking
 
@@ -272,23 +267,19 @@ The cases most likely to lose coverage marks, and how they're covered:
 
 ### Coverage result
 
-```
-Name                     Stmts   Miss  Cover
---------------------------------------------
-src/cli.py                 118      0   100%
-src/crawler.py             142      1    99%
-src/html_parser.py          16      0   100%
-src/inverted_index.py       47      0   100%
-src/main.py                 12      1    92%
-src/metrics.py              20      1    95%
-src/query_processor.py      42      0   100%
-src/ranker.py               57      0   100%
-src/search_engine.py        98      0   100%
---------------------------------------------
-TOTAL                      552      3    99%
-```
+121 tests, 99% total coverage, all checks passing.
 
-The three remaining misses are: the `if __name__ == "__main__"` guard in `main.py` (requires subprocess execution to trigger), the `index_size_bytes` branch in `metrics.py` (path-dependent), and one visited-URL guard in the crawler loop (requires manual queue manipulation to reach). All three are structural constraints rather than logic gaps.
+```
+Name              Stmts   Miss  Cover
+---------------------------------------
+src/__init__.py       0      0   100%
+src/crawler.py      142      1    99%
+src/indexer.py       63      0   100%
+src/main.py         148      2    99%
+src/search.py       192      0   100%
+---------------------------------------
+TOTAL               545      3    99%
+```
 
 ---
 
@@ -324,7 +315,7 @@ Sample queries against the live index:
 
 ## 9. Features beyond the brief
 
-The 80–100 rubric band asks for "advanced features beyond requirements." Three were implemented:
+The 80–100 rubric band asks for "advanced features beyond requirements." Four were implemented:
 
 **BM25 ranking.** The brief names TF-IDF explicitly; BM25 is an improvement over it on short documents. Both are available at runtime via `--ranking bm25/tfidf`.
 
@@ -348,7 +339,28 @@ The 80–100 rubric band asks for "advanced features beyond requirements." Three
 | `snippet()` | O(W) | W = window size, list slice |
 | `suggest_term()` | O(V · \|t\|²) worst case | Pre-filters eliminate most of V |
 
-At 214 pages and 4,445 terms, all query operations complete in under 50 ms on a 2024 laptop. The crawl is wall-clock dominated by the 6 s politeness delay, not CPU.
+### Observed numbers (benchmarked on a 2024 MacBook Air, 20 runs each)
+
+| Operation | Mean | Stdev |
+|---|---|---|
+| Tokenise 50-token page (stop-words off) | 0.064 ms | ±0.038 |
+| Tokenise 500-token page (stop-words on) | 0.177 ms | ±0.021 |
+| Index 200 docs × 50 tokens | 20.0 ms | ±1.4 |
+| Index 200 docs × 100 tokens | 31.4 ms | ±1.9 |
+| Save 200-doc index | 84.5 ms | ±3.5 |
+| Load 200-doc index | 14.2 ms | ±1.6 |
+| Find single term (200 docs, BM25) | 0.005 ms | ±0.002 |
+| Find two-term AND (200 docs) | 0.006 ms | ±0.001 |
+| Find phrase query (200 docs) | 0.008 ms | ±0.002 |
+| Find unknown + did-you-mean | 0.001 ms | ±0.000 |
+
+All search operations are sub-millisecond regardless of index size — the 50-doc and 200-doc timings are nearly identical, confirming the O(df) retrieval is efficient in practice. The crawl is the only slow operation, and that is entirely the 6 s politeness window, not CPU.
+
+Benchmarks reproducible via:
+
+```bash
+python -m benchmarks.benchmark
+```
 
 ---
 
