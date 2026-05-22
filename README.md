@@ -77,50 +77,42 @@ Did you mean:
                         ┌─────────────────┐
                         │   src/main.py   │
                         │ argparse · REPL │
+                        │ CLI · commands  │
                         └────────┬────────┘
-                                 │ instantiates
-                        ┌────────▼────────┐
-                        │   src/cli.py    │
-                        │ command dispatch│
-                        └──┬──────────┬──┘
-                           │          │
-               ┌───────────▼──┐   ┌───▼──────────────┐
-               │ src/crawler  │   │ data/index.json   │
-               │ polite BFS   │   │ versioned index   │
-               │ robots.txt   │   └───────┬───────────┘
-               │ retries      │           │ load
-               └──────┬───────┘           │
-                      │ {url: html}        │
-                      ▼                   ▼
-               ┌──────────────────────────────────┐
-               │        src/html_parser.py         │
-               │  visible text · tokens · stopwords│
-               └──────────────┬───────────────────┘
-                              │ tokens
-                              ▼
-               ┌──────────────────────────────────┐
-               │      src/inverted_index.py        │
-               │  term → URL → {tf, positions}     │
-               │  doc_lengths · doc_tokens         │
-               └──────────────┬───────────────────┘
-                              │
-               ┌──────────────▼───────────────────┐
-               │       src/search_engine.py        │
-               │  AND · phrase · snippets · DYM    │
-               └──────────────┬───────────────────┘
-                              │
-               ┌──────────────▼───────────────────┐
-               │          src/ranker.py            │
-               │  BM25Ranker · TFIDFRanker         │
-               │  create_ranker factory            │
-               └──────────────────────────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+        ┌───────────▼──┐             ┌────────▼────────┐
+        │ src/crawler  │             │ data/index.json │
+        │ polite BFS   │             │ versioned index │
+        │ robots.txt   │             └────────┬────────┘
+        │ retries      │                      │ load
+        └──────┬───────┘                      │
+               │ {url: html}                  │
+               ▼                              ▼
+        ┌──────────────────────────────────────────┐
+        │              src/indexer.py              │
+        │  visible text extraction · tokenisation  │
+        │  stop-word filtering · schema versioning │
+        │  term → URL → {tf, positions}            │
+        │  doc_lengths · doc_tokens · JSON save    │
+        └──────────────────┬───────────────────────┘
+                           │
+                           ▼
+        ┌──────────────────────────────────────────┐
+        │              src/search.py               │
+        │  AND retrieval · phrase search           │
+        │  BM25Ranker · TFIDFRanker                │
+        │  did-you-mean · snippet generation       │
+        │  QueryProcessor · Levenshtein distance   │
+        └──────────────────────────────────────────┘
 ```
 
-**Data flow — build:** `cli` → `crawler` fetches pages → `html_parser` tokenises → `inverted_index` indexes and saves.
+**Data flow — build:** `main.py` → `crawler.py` fetches pages → `indexer.py` tokenises and indexes → saves to `data/index.json`.
 
-**Data flow — find:** `cli` → `search_engine` queries index → `ranker` scores candidates → ranked results with snippets returned to shell.
+**Data flow — find:** `main.py` → `search.py` queries index → ranker scores candidates → ranked results with snippets returned to shell.
 
-Each module has a single responsibility. The crawler knows nothing about indexing. The ranker knows nothing about retrieval logic. The CLI is a thin shell — both crawler and engine are constructor-injectable so the entire test suite runs without a network connection.
+The crawler returns `{url: html}` and has no knowledge of how pages get indexed. The ranker knows only how to score candidate URLs. `main.py` is a thin shell — both crawler and search engine are constructor-injectable so the entire test suite runs without a network connection.
 
 ---
 
@@ -199,7 +191,7 @@ Positional posting intersection (Manning §2.4.1). For a phrase `[t0, t1, ..., t
 
 ## Did-you-mean
 
-When a query returns no results, each unrecognised token is passed through `QueryProcessor.suggest_term`:
+When a query returns no results, each unrecognised token is passed through the spelling suggestion engine:
 
 1. Pre-filter vocabulary by length (`|len(vocab) − len(query)| ≤ 2`).
 2. Compute Levenshtein edit distance against candidates.
@@ -215,7 +207,7 @@ When a query returns no results, each unrecognised token is passed through `Quer
 | Document IDs | Full URLs | Integer doc IDs | Readable in output and debugging; no lookup table needed; index fits in memory at this scale |
 | Crawler frontier | `collections.deque` | `list.pop(0)`, `set` | O(1) at both ends; preserves BFS order; `seen` set deduplicates before enqueue |
 | Tokeniser | `re.findall("[a-z0-9]+")` | NLTK, `str.split` | No extra dependency; matches brief; fast; handles punctuation and case in one step |
-| Stop-words | Inline 60-word list | NLTK, sklearn, none | Brief requires stop-word removal; inline avoids dependency; query example words deliberately kept |
+| Stop-words | Inline list | NLTK, sklearn, none | Brief requires stop-word removal; inline avoids dependency; query example words deliberately kept |
 | Ranking | BM25 default + TF-IDF | Unranked, BM25 only | BM25 is stronger on short documents; exposing both allows runtime comparison; satisfies 80–100 rubric band |
 | Politeness | Injectable `sleep` callable | Hard-coded `time.sleep(6)` | Tests pass `sleep=lambda t: None`; full suite runs in under 7 s without waiting |
 | HTTP mocking | `responses` library | `unittest.mock.patch` | Less brittle; richer response objects; deterministic offline suite |
@@ -241,13 +233,11 @@ python -m ruff check src tests
 | HTTP | Fully mocked via `responses` |
 | Runtime | ~7 s |
 
-**Crawler** — URL normalisation (port, case, fragment, default ports), link extraction (relative, absolute, mailto, javascript, empty href, href-as-list, malformed HTML), BFS deduplication, external-host skip, max-pages cap, 404, 500-then-200 retry recovery, ConnectionError, Timeout, all-retries-fail, non-HTML skip, politeness window (positive sleep, zero-delay, default ≥ 6 s), robots.txt (disallow, 404 allow-all, network failure allow-all).
+**Crawler** — URL normalisation (port, case, fragment, default ports), link extraction (relative, absolute, mailto, javascript, empty href, malformed HTML), BFS deduplication, external-host skip, max-pages cap, 404, 500-then-200 retry recovery, ConnectionError, Timeout, all-retries-fail, non-HTML skip, politeness window, robots.txt (disallow, 404 allow-all, network failure allow-all).
 
-**Inverted index** — tokenisation, stop-word filtering, position tracking, document-length tracking, empty documents, unknown terms, JSON round-trip, schema version rejection.
+**Indexer** — tokenisation, stop-word filtering, position tracking, document-length tracking, boilerplate stripping, empty documents, unknown terms, JSON round-trip, schema version rejection.
 
-**Search engine** — single-word, multi-word AND, empty query, whitespace query, stop-word-only query, duplicate terms, phrase match, phrase non-match, phrase + free term intersection, did-you-mean, snippet with match, snippet with no match, snippet for unknown URL.
-
-**Ranker** — BM25 and TF-IDF positive scores, zero scores for non-matching terms, empty index early return, average document length, multi-term queries.
+**Search** — single-word, multi-word AND, empty query, whitespace query, stop-word-only query, duplicate terms, phrase match, phrase non-match, phrase + free term intersection, BM25/TF-IDF scoring, did-you-mean, snippet generation, empty index early return.
 
 **CLI** — all four commands, ranking selection, inline `--ranking` flag, unknown command, missing arguments, missing index, did-you-mean display, REPL loop (quit, exit, help, blank, unknown, error trapping).
 
@@ -272,15 +262,11 @@ python -m ruff check src tests
 ```
 comp3011-search-engine-tool/
 ├── src/
-│   ├── cli.py               command dispatch and REPL
-│   ├── crawler.py           polite BFS crawler
-│   ├── html_parser.py       tokenisation and text extraction
-│   ├── inverted_index.py    index structure, persistence, schema
-│   ├── main.py              argparse entry point
-│   ├── metrics.py           index summary and timer
-│   ├── query_processor.py   query cleaning and Levenshtein
-│   ├── ranker.py            BM25 and TF-IDF rankers
-│   └── search_engine.py     retrieval, phrase search, snippets
+│   ├── __init__.py
+│   ├── crawler.py      polite BFS crawler
+│   ├── indexer.py      tokenisation, inverted index, JSON persistence
+│   ├── search.py       retrieval, ranking, phrase search, snippets
+│   └── main.py         argparse entry point, CLI, REPL
 ├── tests/
 │   ├── test_cli.py
 │   ├── test_crawler.py
@@ -293,6 +279,8 @@ comp3011-search-engine-tool/
 │   ├── test_search_engine.py
 │   ├── test_additional.py
 │   └── test_coverage.py
+├── benchmarks/
+│   └── benchmark.py
 ├── data/
 ├── .github/workflows/
 ├── README.md
