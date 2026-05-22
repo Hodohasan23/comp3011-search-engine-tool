@@ -1,7 +1,7 @@
 import pytest
 
-from src.inverted_index import InvertedIndex
-from src.ranker import BM25Ranker, TFIDFRanker, create_ranker
+from src.indexer import InvertedIndex
+from src.search import BM25Ranker, TFIDFRanker, create_ranker
 
 
 def test_average_document_length():

@@ -1,5 +1,5 @@
-from src.inverted_index import InvertedIndex
-from src.metrics import Timer, index_summary
+from src.indexer import InvertedIndex
+from src.main import Timer, index_summary
 
 
 def test_index_summary_counts_documents_terms_and_tokens():

@@ -1,4 +1,4 @@
-from src.html_parser import extract_visible_text, html_to_tokens, tokenize
+from src.indexer import extract_visible_text, html_to_tokens, tokenize
 
 
 def test_tokenize_lowercases_words():

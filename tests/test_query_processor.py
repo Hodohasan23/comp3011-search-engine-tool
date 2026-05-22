@@ -1,4 +1,4 @@
-from src.query_processor import QueryProcessor
+from src.search import QueryProcessor
 
 
 def test_clean_query_tokenises_words():

@@ -15,12 +15,12 @@ import sys
 import responses
 from unittest.mock import patch
 
-from src.cli import SearchCLI
+from src.main import SearchCLI
 from src.crawler import Crawler
-from src.inverted_index import InvertedIndex
-from src.metrics import index_summary
-from src.ranker import BM25Ranker, TFIDFRanker
-from src.search_engine import SearchEngine
+from src.indexer import InvertedIndex
+from src.main import index_summary
+from src.search import BM25Ranker, TFIDFRanker
+from src.search import SearchEngine
 
 
 # ──────────────────────────────────────────────
@@ -38,16 +38,16 @@ def test_build_summary_includes_index_size(tmp_path):
         def crawl(self):
             return {"page1": "<p>good friends</p>"}
 
-    from src import cli as cli_module
-    original = cli_module.Crawler
-    cli_module.Crawler = lambda *a, **kw: FakeCrawler()
+    from src import main as main_module
+    original = main_module.Crawler
+    main_module.Crawler = lambda *a, **kw: FakeCrawler()
 
     try:
         output = cli.build()
         assert "bytes" in output
         assert "Built index" in output
     finally:
-        cli_module.Crawler = original
+        main_module.Crawler = original
 
 
 # line 149 — find with no results and no suggestions
